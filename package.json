@@ -5,16 +5,21 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "tsx watch src/server.ts",
+    "start:api": "tsx src/server.ts",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
+  "@types/express": "^5.0.6",
     "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "mysql2": "^3.24.4",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "tsx": "^4.23.13"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -14,6 +14,7 @@ export const mockGoalMetrics: GoalMetrics = {
   callsMonthlyGoal: 400,
   meetingsMonthlyGoal: 12,
   messagesMonthlyGoal: 350,
+  closingsMonthlyGoal: 0,
   callsDone: 180,
   meetingsDone: 6,
   messagesDone: 210,

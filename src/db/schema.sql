@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(100) NOT NULL,
   email VARCHAR(100) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
-  role ENUM('ADM', 'SDR') NOT NULL DEFAULT 'SDR',
+  role ENUM('ADM', 'SDR', 'CLOSER') NOT NULL DEFAULT 'SDR',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS leads (
     'Atendeu', 'Trabalha em outra empresa', 'número inexistente', 'Sem etiqueta'
   ) NOT NULL DEFAULT 'Sem etiqueta',
   last_note VARCHAR(80) NULL,
+  scheduled_at DATE NULL,
+  last_call_attempt ENUM('Sim', 'Não, deixei mensagem', 'Não foi possível') NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (sdr_id) REFERENCES users(id) ON DELETE CASCADE
@@ -46,9 +48,21 @@ CREATE TABLE IF NOT EXISTS goal_metrics (
   calls_monthly_goal INT NOT NULL DEFAULT 400,
   meetings_monthly_goal INT NOT NULL DEFAULT 12,
   messages_monthly_goal INT NOT NULL DEFAULT 350,
+  closings_monthly_goal INT NOT NULL DEFAULT 0,
   calls_done INT NOT NULL DEFAULT 0,
   meetings_done INT NOT NULL DEFAULT 0,
   messages_done INT NOT NULL DEFAULT 0,
   FOREIGN KEY (sdr_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE KEY uk_sdr_month (sdr_id, month_year)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS call_attempts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  lead_id INT NOT NULL,
+  sdr_id INT NOT NULL,
+  status ENUM('Sim', 'Não, deixei mensagem', 'Não foi possível') NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE,
+  FOREIGN KEY (sdr_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_call_attempts_created_at (created_at)
 ) ENGINE=InnoDB;

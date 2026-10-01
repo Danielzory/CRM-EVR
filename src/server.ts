@@ -1,8 +1,9 @@
-import express, { type Express, type Request, type Response } from 'express';
+import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 import { pool } from './db/connection';
 import type {
@@ -20,6 +21,14 @@ import type {
 } from './types';
 
 const MAX_LAST_NOTE_LENGTH = 80;
+const JWT_SECRET = process.env.JWT_SECRET || 'crm_evr_secret_key_default_2026';
+
+type AuthenticatedUser = { id: number; role: UserRole };
+type AuthenticatedRequest = Request & { authUser?: AuthenticatedUser };
+
+function getAuthenticatedUser(request: Request): AuthenticatedUser | undefined {
+  return (request as AuthenticatedRequest).authUser;
+}
 
 const validStages: LeadStage[] = [
   'Novo Lead',
@@ -101,11 +110,36 @@ async function ensureUserGoalsTable(): Promise<void> {
 }
 
 function requireAdmin(request: Request, response: Response): boolean {
-  if (request.header('x-user-role') !== 'ADM') {
+  if (getAuthenticatedUser(request)?.role !== 'ADM') {
     errorResponse(response, 403, 'Acesso exclusivo para administradores.');
     return false;
   }
   return true;
+}
+
+function authenticateRequest(request: Request, response: Response, next: NextFunction): void {
+  const authorization = request.header('authorization');
+  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (!token) {
+    errorResponse(response, 401, 'Autenticação necessária.');
+    return;
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (typeof payload === 'string' || !Number.isInteger(payload.id) || typeof payload.role !== 'string') {
+      errorResponse(response, 401, 'Token inválido.');
+      return;
+    }
+    if (payload.role !== 'ADM' && payload.role !== 'SDR' && payload.role !== 'CLOSER') {
+      errorResponse(response, 401, 'Token inválido.');
+      return;
+    }
+    (request as AuthenticatedRequest).authUser = { id: Number(payload.id), role: payload.role };
+    next();
+  } catch {
+    errorResponse(response, 401, 'Token inválido ou expirado.');
+  }
 }
 
 function validateUserPayload(payload: unknown): { name: string; email: string; password: string; role: UserRole } {
@@ -308,8 +342,11 @@ export function createApp(): { app: Express } {
       : databaseUser?.password_hash === createHash('sha256').update(password).digest('hex');
     if (!databaseUser || !validPassword) return errorResponse(response, 401, 'E-mail ou senha inválidos.');
     const safeUser: User = { id: Number(databaseUser.id), name: String(databaseUser.name), email: String(databaseUser.email), role: databaseUser.role as UserRole };
-    return response.json({ user: safeUser, token: `${safeUser.id}:${safeUser.role}` });
+    const token = jwt.sign({ id: safeUser.id, role: safeUser.role }, JWT_SECRET);
+    return response.json({ user: safeUser, token });
   });
+
+  app.use('/api', authenticateRequest);
 
   app.get('/api/users', async (request: Request, response: Response) => {
     if (!requireAdmin(request, response)) return;
@@ -338,7 +375,7 @@ export function createApp(): { app: Express } {
 
   app.delete('/api/users/:id', async (request: Request, response: Response) => {
     if (!requireAdmin(request, response)) return;
-    if (String(request.header('x-user-id')) === String(request.params.id)) return errorResponse(response, 400, 'O administrador atual não pode ser excluído.');
+    if (String(getAuthenticatedUser(request)?.id) === String(request.params.id)) return errorResponse(response, 400, 'O administrador atual não pode ser excluído.');
     try {
       const [result] = await pool.execute<ResultSetHeader>('DELETE FROM users WHERE id = ?', [request.params.id]);
       if (!result.affectedRows) return errorResponse(response, 404, 'Usuário não encontrado.');
@@ -380,7 +417,7 @@ export function createApp(): { app: Express } {
 
   app.get('/api/leads', async (request: Request, response: Response) => {
     try {
-      const role = request.header('x-user-role') as UserRole | undefined;
+      const role = getAuthenticatedUser(request)?.role;
       const allowedStages = role && roleStages[role] ? roleStages[role] : validStages;
       const placeholders = allowedStages.map(() => '?').join(',');
       const [rows] = await pool.query<LeadRow[]>(`SELECT * FROM leads WHERE stage IN (${placeholders}) ORDER BY updated_at DESC`, allowedStages);
@@ -440,9 +477,7 @@ export function createApp(): { app: Express } {
     try {
       await ensureCallAttemptsTable();
       const period = request.query.period === 'weekly' ? 'weekly' : 'monthly';
-      const sdrId = request.header('x-user-id');
-      const parsedSdrId = sdrId ? Number(sdrId) : undefined;
-      return response.json(await queryMetrics(period, parsedSdrId !== undefined && Number.isInteger(parsedSdrId) && parsedSdrId > 0 ? parsedSdrId : undefined));
+      return response.json(await queryMetrics(period, getAuthenticatedUser(request)?.id));
     } catch (error) {
       return errorResponse(response, 503, error instanceof Error ? error.message : 'Banco de dados indisponível.');
     }
@@ -451,7 +486,7 @@ export function createApp(): { app: Express } {
   app.get('/api/metrics/current', async (request: Request, response: Response) => {
     try {
       await ensureCallAttemptsTable();
-      const sdrId = Number(request.header('x-user-id'));
+      const sdrId = Number(getAuthenticatedUser(request)?.id);
       const metrics = await queryMetrics('monthly', Number.isNaN(sdrId) ? undefined : sdrId);
       return response.json({ callsDone: metrics.current.calls, meetingsDone: metrics.current.meetings, messagesDone: metrics.current.messages, callsMonthlyGoal: metrics.goals.calls, meetingsMonthlyGoal: metrics.goals.meetings, messagesMonthlyGoal: metrics.goals.messages });
     } catch (error) {
@@ -470,7 +505,7 @@ export function createApp(): { app: Express } {
       const columns: Record<string, string> = { callsDone: 'calls_done', meetingsDone: 'meetings_done', messagesDone: 'messages_done' };
       const assignments = updates.map((key) => `${columns[key]} = ?`).join(', ');
       const values = updates.map((key) => Number(candidate[key]));
-      const sdrId = Number(request.header('x-user-id'));
+      const sdrId = Number(getAuthenticatedUser(request)?.id);
       const where = Number.isNaN(sdrId) ? '' : ' AND sdr_id = ?';
       if (!Number.isNaN(sdrId)) values.push(sdrId);
       await pool.execute(`UPDATE goal_metrics SET ${assignments} WHERE month_year = DATE_FORMAT(CURDATE(), '%Y-%m')${where}`, values);

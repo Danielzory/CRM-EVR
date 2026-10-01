@@ -486,8 +486,9 @@ export function createApp(): { app: Express } {
 }
 
 export const app: Express = createApp().app;
+export default app;
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.env.NODE_ENV !== 'production' && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 3001);
   app.listen(port, () => {
     console.log(`CRM API running on http://localhost:${port}`);

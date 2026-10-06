@@ -524,8 +524,5 @@ export const app: Express = createApp().app;
 export default app;
 
 if (process.env.NODE_ENV !== 'production' && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const port = Number(process.env.PORT ?? 3001);
-  app.listen(port, () => {
-    console.log(`CRM API running on http://localhost:${port}`);
-  });
+  app.listen(3001, () => console.log('Server running on port 3001'));
 }

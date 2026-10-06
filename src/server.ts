@@ -333,17 +333,28 @@ export function createApp(): { app: Express } {
   app.use(express.json());
 
   app.post('/api/auth/login', async (request: Request, response: Response) => {
-    const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : '';
-    const password = typeof request.body?.password === 'string' ? request.body.password : '';
-    const [rows] = await pool.query<RowDataPacket[]>('SELECT id, name, email, role, password_hash FROM users WHERE email = ? LIMIT 1', [email]);
-    const databaseUser = rows[0];
-    const validPassword = databaseUser?.password_hash?.startsWith('$2')
-      ? await bcrypt.compare(password, databaseUser.password_hash)
-      : databaseUser?.password_hash === createHash('sha256').update(password).digest('hex');
-    if (!databaseUser || !validPassword) return errorResponse(response, 401, 'E-mail ou senha inválidos.');
-    const safeUser: User = { id: Number(databaseUser.id), name: String(databaseUser.name), email: String(databaseUser.email), role: databaseUser.role as UserRole };
-    const token = jwt.sign({ id: safeUser.id, role: safeUser.role }, JWT_SECRET);
-    return response.json({ user: safeUser, token });
+    try {
+      const email = typeof request.body?.email === 'string' ? request.body.email.trim().toLowerCase() : '';
+      const password = typeof request.body?.password === 'string' ? request.body.password : '';
+      const [rows] = await pool.query<RowDataPacket[]>('SELECT id, name, email, role, password_hash FROM users WHERE email = ? LIMIT 1', [email]);
+      const databaseUser = rows[0];
+      const validPassword = databaseUser?.password_hash?.startsWith('$2')
+        ? await bcrypt.compare(password, databaseUser.password_hash)
+        : databaseUser?.password_hash === createHash('sha256').update(password).digest('hex');
+      if (!databaseUser || !validPassword) return errorResponse(response, 401, 'E-mail ou senha inválidos.');
+      const safeUser: User = { id: Number(databaseUser.id), name: String(databaseUser.name), email: String(databaseUser.email), role: databaseUser.role as UserRole };
+      const token = jwt.sign({ id: safeUser.id, role: safeUser.role }, JWT_SECRET);
+      return response.json({ user: safeUser, token });
+    } catch (error) {
+      console.error('ERRO INTERNO NO LOGIN:', error);
+      const details = error && typeof error === 'object' ? error as { message?: unknown; stack?: unknown } : undefined;
+      return response.status(500).json({
+        success: false,
+        message: 'Erro interno ao realizar login',
+        error: typeof details?.message === 'string' && details.message ? details.message : String(error),
+        stack: typeof details?.stack === 'string' ? details.stack : undefined,
+      });
+    }
   });
 
   app.use('/api', authenticateRequest);

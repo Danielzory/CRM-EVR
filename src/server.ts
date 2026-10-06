@@ -5,7 +5,7 @@ import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
-import { pool } from './db/connection';
+import { pool } from './db/connection.js';
 import type {
   AnalyticsMetrics,
   CreateLeadDTO,
@@ -18,7 +18,7 @@ import type {
     User,
     UserRole,
   UpdateLeadStageTagDTO,
-} from './types';
+} from './types/index.js';
 
 const MAX_LAST_NOTE_LENGTH = 80;
 const JWT_SECRET = process.env.JWT_SECRET || 'crm_evr_secret_key_default_2026';

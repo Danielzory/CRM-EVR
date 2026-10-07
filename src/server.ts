@@ -534,6 +534,9 @@ export function createApp(): { app: Express } {
 export const app: Express = createApp().app;
 export default app;
 
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  app.listen(3001, () => console.log('Server running on port 3001'));
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+  });
 }

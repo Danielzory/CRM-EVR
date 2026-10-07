@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AnalyticsMetrics, CallAttemptStatus, Lead, LeadStage, LeadTag, MetricsResponse, User, UserGoal, UserRole } from './types';
+import { apiFetch } from './services/api';
 import './App.css';
 
 const stages: LeadStage[] = ['Novo Lead', 'Follow 1', 'Follow 2', 'Follow 3', 'Interação', 'Indicação Solicitada', 'Reunião Agendada', 'Reagendada', 'Realizada', 'Em negociação', 'Fechadas', 'Repescagem'];
@@ -15,7 +16,7 @@ const emptyLeadForm: LeadForm = { name: '', jobTitle: '', companyName: '', indus
 function authenticatedFetch(input: RequestInfo | URL, token: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
+  return apiFetch(String(input), { ...init, headers });
 }
 
 function Login({ onLogin }: { onLogin: (user: User, token: string) => void }) {
@@ -24,7 +25,7 @@ function Login({ onLogin }: { onLogin: (user: User, token: string) => void }) {
   const [error, setError] = useState('');
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    const response = await apiFetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
     if (!response.ok) { setError(response.status === 401 ? 'E-mail ou senha inválidos.' : 'Não foi possível autenticar no servidor.'); return; }
     const payload = await response.json() as { user: User; token: string };
     onLogin(payload.user, payload.token);

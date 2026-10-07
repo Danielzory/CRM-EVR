@@ -1,4 +1,5 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import cors from 'cors';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
@@ -330,6 +331,7 @@ function errorResponse(response: Response, statusCode: number, message: string):
 export function createApp(): { app: Express } {
   const app = express();
 
+  app.use(cors({ origin: true, credentials: true }));
   app.use(express.json());
 
   app.post('/api/auth/login', async (request: Request, response: Response) => {

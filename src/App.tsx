@@ -25,10 +25,15 @@ function Login({ onLogin }: { onLogin: (user: User, token: string) => void }) {
   const [error, setError] = useState('');
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const response = await apiFetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
-    if (!response.ok) { setError(response.status === 401 ? 'E-mail ou senha inválidos.' : 'Não foi possível autenticar no servidor.'); return; }
-    const payload = await response.json() as { user: User; token: string };
-    onLogin(payload.user, payload.token);
+    setError('');
+    try {
+      const response = await apiFetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+      if (!response.ok) { setError(response.status === 401 ? 'E-mail ou senha inválidos.' : 'Não foi possível autenticar no servidor.'); return; }
+      const payload = await response.json() as { user: User; token: string };
+      onLogin(payload.user, payload.token);
+    } catch {
+      setError('Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.');
+    }
   };
   return <main className="login-page"><form className="login-card" onSubmit={submit}><p className="eyebrow">EVR CRM</p><h1>Acesse sua operação</h1><label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Senha<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="error-text">{error}</p>}<button className="primary-button">Entrar</button></form></main>;
 }
@@ -40,33 +45,51 @@ function AdminPanel({ token, onBack }: { token: string; onBack: () => void }) {
   const headers = { 'Content-Type': 'application/json' };
 
   const loadGoals = async () => {
-    const response = await authenticatedFetch('/api/goals', token, { headers });
-    if (response.ok) setGoals(await response.json() as UserGoal[]);
+    try {
+      const response = await authenticatedFetch('/api/goals', token, { headers });
+      if (!response.ok) { setFeedback('Não foi possível carregar as metas.'); return; }
+      setGoals(await response.json() as UserGoal[]);
+    } catch {
+      setFeedback('Não foi possível conectar ao servidor para carregar as metas.');
+    }
   };
   useEffect(() => {
     authenticatedFetch('/api/goals', token).then(async (response) => {
       if (response.ok) setGoals(await response.json() as UserGoal[]);
-    }).catch(() => undefined);
+    }).catch(() => setFeedback('Não foi possível conectar ao servidor para carregar as metas.'));
   }, [token]);
 
   const createUser = async (event: React.FormEvent) => {
     event.preventDefault();
-    const response = await authenticatedFetch('/api/users', token, { method: 'POST', headers, body: JSON.stringify(form) });
-    if (response.ok) { setForm({ name: '', email: '', password: '', role: 'SDR' }); setFeedback('Usuário cadastrado com sucesso.'); await loadGoals(); }
-    else { const payload = await response.json() as { error?: string }; setFeedback(payload.error ?? 'Não foi possível cadastrar o usuário.'); }
+    try {
+      const response = await authenticatedFetch('/api/users', token, { method: 'POST', headers, body: JSON.stringify(form) });
+      if (response.ok) { setForm({ name: '', email: '', password: '', role: 'SDR' }); setFeedback('Usuário cadastrado com sucesso.'); await loadGoals(); }
+      else { const payload = await response.json() as { error?: string }; setFeedback(payload.error ?? 'Não foi possível cadastrar o usuário.'); }
+    } catch {
+      setFeedback('Não foi possível conectar ao servidor para cadastrar o usuário.');
+    }
   };
   const updateGoal = (userId: number, field: keyof Pick<UserGoal, 'callsMonthlyGoal' | 'messagesMonthlyGoal' | 'meetingsMonthlyGoal' | 'closingsMonthlyGoal'>, value: string) => {
     const parsed = Math.max(0, Number(value) || 0);
     setGoals((current) => current.map((goal) => goal.userId === userId ? { ...goal, [field]: parsed } : goal));
   };
   const saveGoal = async (goal: UserGoal) => {
-    const response = await authenticatedFetch(`/api/goals/${goal.userId}`, token, { method: 'PUT', headers, body: JSON.stringify({ calls: goal.callsMonthlyGoal, messages: goal.messagesMonthlyGoal, meetings: goal.meetingsMonthlyGoal, closings: goal.closingsMonthlyGoal }) });
-    setFeedback(response.ok ? `Metas de ${goal.name} salvas.` : 'Não foi possível salvar as metas.');
+    try {
+      const response = await authenticatedFetch(`/api/goals/${goal.userId}`, token, { method: 'PUT', headers, body: JSON.stringify({ calls: goal.callsMonthlyGoal, messages: goal.messagesMonthlyGoal, meetings: goal.meetingsMonthlyGoal, closings: goal.closingsMonthlyGoal }) });
+      setFeedback(response.ok ? `Metas de ${goal.name} salvas.` : 'Não foi possível salvar as metas.');
+    } catch {
+      setFeedback('Não foi possível conectar ao servidor para salvar as metas.');
+    }
   };
   const removeUser = async (goal: UserGoal) => {
     if (!window.confirm(`Excluir o usuário ${goal.name}?`)) return;
-    const response = await authenticatedFetch(`/api/users/${goal.userId}`, token, { method: 'DELETE', headers });
-    if (response.ok) { setGoals((current) => current.filter((item) => item.userId !== goal.userId)); setFeedback('Usuário excluído.'); }
+    try {
+      const response = await authenticatedFetch(`/api/users/${goal.userId}`, token, { method: 'DELETE', headers });
+      if (response.ok) { setGoals((current) => current.filter((item) => item.userId !== goal.userId)); setFeedback('Usuário excluído.'); }
+      else setFeedback('Não foi possível excluir o usuário.');
+    } catch {
+      setFeedback('Não foi possível conectar ao servidor para excluir o usuário.');
+    }
   };
   return <section className="admin-panel"><div className="summary-header"><div><p className="eyebrow">Acesso restrito</p><h2>Gestão de Usuários e Metas</h2></div><button className="secondary-button" onClick={onBack}>Voltar ao CRM</button></div>
     <form className="user-form" onSubmit={createUser}><h3>Cadastrar usuário</h3><label>Nome completo<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label><label>E-mail<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required /></label><label>Senha padrão<input type="password" minLength={6} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label><label>Perfil<select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRole })}><option value="ADM">ADM</option><option value="SDR">SDR</option><option value="CLOSER">CLOSER</option></select></label><button className="primary-button">Cadastrar</button></form>
@@ -88,7 +111,9 @@ function App() {
     }
   });
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
+  const [requestError, setRequestError] = useState('');
   const [period, setPeriod] = useState<'monthly' | 'weekly'>('monthly');
   const [view, setView] = useState<View>('kanban');
   const [expandedId, setExpandedId] = useState<number | string | null>(null);
@@ -111,48 +136,74 @@ function App() {
     if (!user || !token) return;
     authenticatedFetch('/api/leads', token).then(async (response) => {
       if (response.ok) setLeads(await response.json() as Lead[]);
-    }).catch(() => undefined);
+      else setRequestError('Não foi possível carregar os leads.');
+    }).catch(() => setRequestError('Não foi possível conectar ao servidor para carregar os leads.'));
     authenticatedFetch(`/api/metrics?period=${period}`, token).then(async (response) => {
       if (response.ok) setMetrics(await response.json() as MetricsResponse);
-    }).catch(() => undefined);
+      else setRequestError('Não foi possível carregar as métricas.');
+    }).catch(() => setRequestError('Não foi possível conectar ao servidor para carregar as métricas.'));
   }, [user, token, period, view]);
 
   const updateLead = async (id: number | string, updates: Partial<Lead>) => {
     if (!user || !token) return;
-    const response = await authenticatedFetch(`/api/leads/${id}/stage-tag`, token, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
-    if (response.ok) {
+    try {
+      const response = await authenticatedFetch(`/api/leads/${id}/stage-tag`, token, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
+      if (!response.ok) { setRequestError('Não foi possível salvar a alteração do lead.'); return; }
       const updated = await response.json() as Lead;
       setLeads((current) => current.map((lead) => lead.id === id ? updated : lead));
-      const metricsResponse = await authenticatedFetch(`/api/metrics?period=${period}`, token);
-      if (metricsResponse.ok) setMetrics(await metricsResponse.json() as MetricsResponse);
+      setRequestError('');
+      if ('lastNote' in updates) {
+        setNoteDrafts((current) => {
+          const next = { ...current };
+          delete next[String(id)];
+          return next;
+        });
+      }
+      try {
+        const metricsResponse = await authenticatedFetch(`/api/metrics?period=${period}`, token);
+        if (metricsResponse.ok) setMetrics(await metricsResponse.json() as MetricsResponse);
+      } catch {
+        setRequestError('Alteração salva, mas não foi possível atualizar as métricas.');
+      }
+    } catch {
+      setRequestError('Não foi possível conectar ao servidor para salvar a alteração do lead.');
     }
   };
   const deleteLead = async (id: number | string) => {
     const lead = leads.find((item) => item.id === id);
     if (lead && window.confirm(`Excluir o lead ${lead.name}?`)) {
       if (!token) return;
-      const response = await authenticatedFetch(`/api/leads/${id}`, token, { method: 'DELETE' });
-      if (response.ok) { setLeads((current) => current.filter((item) => item.id !== id)); setExpandedId(null); }
+      try {
+        const response = await authenticatedFetch(`/api/leads/${id}`, token, { method: 'DELETE' });
+        if (response.ok) { setLeads((current) => current.filter((item) => item.id !== id)); setExpandedId(null); setRequestError(''); }
+        else setRequestError('Não foi possível excluir o lead.');
+      } catch {
+        setRequestError('Não foi possível conectar ao servidor para excluir o lead.');
+      }
     }
   };
   const createLead = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user || !token) return;
     setLeadFormError('');
-    const response = await authenticatedFetch('/api/leads', token, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...leadForm, sdrId: user.id, employeeCount: Number(leadForm.employeeCount) }),
-    });
-    if (!response.ok) {
-      const payload = await response.json() as { error?: string };
-      setLeadFormError(payload.error ?? 'Não foi possível cadastrar o lead.');
-      return;
+    try {
+      const response = await authenticatedFetch('/api/leads', token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...leadForm, sdrId: user.id, employeeCount: Number(leadForm.employeeCount) }),
+      });
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string };
+        setLeadFormError(payload.error ?? 'Não foi possível cadastrar o lead.');
+        return;
+      }
+      const createdLead = await response.json() as Lead;
+      setLeads((current) => [createdLead, ...current]);
+      setLeadForm(emptyLeadForm);
+      setIsLeadModalOpen(false);
+    } catch {
+      setLeadFormError('Não foi possível conectar ao servidor para cadastrar o lead.');
     }
-    const createdLead = await response.json() as Lead;
-    setLeads((current) => [createdLead, ...current]);
-    setLeadForm(emptyLeadForm);
-    setIsLeadModalOpen(false);
   };
   const summary = useMemo(() => stages.reduce((result, stage) => ({ ...result, [stage]: leads.filter((lead) => lead.stage === stage).length }), {} as Record<LeadStage, number>), [leads]);
 
@@ -170,7 +221,7 @@ function App() {
         <p>{lead.phone} · {lead.email}</p>
         <label>Retomar em<input type="date" value={lead.scheduledAt ?? ''} onChange={(event) => updateLead(lead.id, { scheduledAt: event.target.value })} onClick={(event) => event.stopPropagation()} /></label>
         <label>Ligou?<select value={lead.lastCallAttempt ?? ''} onChange={(event) => updateLead(lead.id, { lastCallAttempt: event.target.value as CallAttemptStatus })} onClick={(event) => event.stopPropagation()}><option value="">Selecionar</option>{attempts.map((attempt) => <option key={attempt}>{attempt}</option>)}</select></label>
-        <label>Nota rápida<textarea maxLength={80} value={lead.lastNote ?? ''} onChange={(event) => updateLead(lead.id, { lastNote: event.target.value })} onClick={(event) => event.stopPropagation()} /></label>
+        <label>Nota rápida<textarea maxLength={80} value={noteDrafts[String(lead.id)] ?? lead.lastNote ?? ''} onChange={(event) => setNoteDrafts((current) => ({ ...current, [String(lead.id)]: event.target.value }))} onBlur={(event) => { const lastNote = event.currentTarget.value; if (lastNote !== (lead.lastNote ?? '')) void updateLead(lead.id, { lastNote }); }} onClick={(event) => event.stopPropagation()} /></label>
         <button className="secondary-button" onClick={(event) => { event.stopPropagation(); updateLead(lead.id, { stage: nextStage }); }}>Avançar fase</button>
         <button className="secondary-button" onClick={(event) => { event.stopPropagation(); updateLead(lead.id, { stage: 'Repescagem' }); }}>Enviar para Repescagem</button>
         <label>Etiqueta<select value={lead.tag} onChange={(event) => updateLead(lead.id, { tag: event.target.value as LeadTag })} onClick={(event) => event.stopPropagation()}>{leadTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
@@ -187,6 +238,7 @@ function App() {
   const goalCards = user.role === 'CLOSER' ? [['Fechamentos', metrics?.current.closings ?? 0, metrics?.goals.closings ?? 0]] : [['Ligações', metrics?.current.calls ?? 0, metrics?.goals.calls ?? 0], ['Reuniões', metrics?.current.meetings ?? 0, metrics?.goals.meetings ?? 0], ['Mensagens', metrics?.current.messages ?? 0, metrics?.goals.messages ?? 0]];
   if (admin) return <div className="crm-shell"><AdminPanel token={token} onBack={() => setView('kanban')} /></div>;
   return <div className="crm-shell">
+    {requestError && <p className="error-text" role="alert">{requestError}</p>}
     <header className="topbar"><div className="user-block"><div className="avatar">{user.name[0]}</div><div><p className="eyebrow">{user.role}</p><h1>{user.name} <span className="today-badge" title={`Você tem ${metrics?.scheduledToday ?? 0} leads para retomar hoje`}>{metrics?.scheduledToday ?? 0}</span></h1></div></div><nav className="topbar-actions"><button className="secondary-button" onClick={() => setView('dashboard')}>Dashboard</button>{user.role === 'ADM' && <button className="secondary-button" onClick={() => setView('admin')}>Gestão de Usuários e Metas</button>}<button className="secondary-button" onClick={() => setView(triage ? 'kanban' : 'triagem')}>{triage ? 'Voltar ao Kanban' : 'Triagem de Novos Leads'}</button><button className="secondary-button" onClick={() => setView('repescagem')}>Repescagem ({summary.Repescagem})</button><button className="logout-button" onClick={() => { setUser(null); setToken(null); }}>Sair</button></nav></header>
     {!dashboard && <section className="summary-panel"><div className="summary-header"><h2>{user.role === 'CLOSER' ? 'Performance comercial' : 'Metas e atividade'}</h2><div className="segmented"><button className={period === 'monthly' ? 'selected' : ''} onClick={() => setPeriod('monthly')}>Visão Mensal</button><button className={period === 'weekly' ? 'selected' : ''} onClick={() => setPeriod('weekly')}>Visão Semanal</button></div></div><div className="goal-grid">{goalCards.map(([label, value, target]) => <div className="goal-card" key={label}><div className="goal-card-header"><span>{label}</span><strong>{value} / {target}</strong></div><div className="progress-track"><div className="progress-bar" style={{ width: `${target ? Math.min(100, (Number(value) / Number(target)) * 100) : 0}%` }} /></div></div>)}</div></section>}
     {dashboard ? <section className="triage-panel dashboard-page"><h2>Dashboard analítico</h2><div className="stats-panel">{[['Ligações realizadas', analytics?.callsMade ?? 0], ['Ligações atendidas', analytics?.callsAnswered ?? 0], ['Ligações não atendidas', analytics?.callsUnanswered ?? 0], ['Mensagens enviadas', analytics?.messagesSent ?? 0], ['Interações totais', analytics?.totalInteractions ?? 0], ['Agendamentos realizados', analytics?.meetingsBooked ?? 0]].map(([label, value]) => <div className="stat-box" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></section> : triage ? <section className="triage-panel"><div className="summary-header"><h2>Triagem de Novos Leads</h2><button className="primary-button" onClick={() => { setLeadFormError(''); setIsLeadModalOpen(true); }}>+ Adicionar Lead</button></div><table><tbody>{leads.filter((lead) => lead.stage === 'Novo Lead').map((lead) => <tr key={lead.id}><td>{lead.name}</td><td>{lead.companyName}</td><td><button className="primary-button" onClick={() => updateLead(lead.id, { stage: 'Follow 1' })}>Mover para Follow 1</button></td></tr>)}</tbody></table></section> : repescagem ? <section className="triage-panel"><h2>Repescagem</h2><div className="repescagem-list">{leads.filter((lead) => lead.stage === 'Repescagem').map(renderCard)}</div></section> : <section className="kanban-board">{roleStages[user.role].map((stage) => <div className="kanban-column" key={stage} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (draggedId !== null) updateLead(draggedId, { stage }); }}><div className="column-header"><h3>{stage}</h3><span>{summary[stage]}</span></div><div className="column-body">{leads.filter((lead) => lead.stage === stage).map(renderCard)}</div></div>)}</section>}

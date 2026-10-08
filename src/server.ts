@@ -1,6 +1,5 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
-import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import bcrypt from 'bcryptjs';
@@ -350,30 +349,27 @@ export function createApp(): { app: Express } {
 
     try {
       const [rows] = await pool.query<RowDataPacket[]>('SELECT id, name, email, role, password_hash FROM users WHERE email = ? LIMIT 1', [email]);
-      const databaseUser = rows[0];
+      const user = rows[0];
 
       console.log('[auth/login] Busca no banco concluída', {
         email: emailForLog,
-        usuarioEncontrado: Boolean(databaseUser),
+        usuarioEncontrado: Boolean(user),
       });
 
-      if (!databaseUser) {
+      if (!user) {
         console.log('[auth/login] Comparação de senha não realizada: usuário não encontrado');
-        return errorResponse(response, 401, 'E-mail ou senha inválidos.');
+        return errorResponse(response, 401, 'E-mail ou senha inválidos');
       }
 
-      const usesBcrypt = typeof databaseUser.password_hash === 'string' && databaseUser.password_hash.startsWith('$2');
-      const validPassword = usesBcrypt
-        ? await bcrypt.compare(password, databaseUser.password_hash)
-        : databaseUser.password_hash === createHash('sha256').update(password).digest('hex');
-      console.log('[auth/login] Comparação de senha concluída', {
-        metodo: usesBcrypt ? 'bcrypt' : 'sha256 legado',
-        senhaValida: validPassword,
+      const isMatch = await bcrypt.compare(password, user.password_hash);
+      console.log('[auth/login] Comparação de senha via bcrypt concluída', {
+        metodo: 'bcrypt',
+        senhaValida: isMatch,
       });
 
-      if (!validPassword) return errorResponse(response, 401, 'E-mail ou senha inválidos.');
+      if (!isMatch) return errorResponse(response, 401, 'E-mail ou senha inválidos');
 
-      const safeUser: User = { id: Number(databaseUser.id), name: String(databaseUser.name), email: String(databaseUser.email), role: databaseUser.role as UserRole };
+      const safeUser: User = { id: Number(user.id), name: String(user.name), email: String(user.email), role: user.role as UserRole };
       console.log('[auth/login] Gerando token JWT', { userId: safeUser.id, role: safeUser.role });
 
       let token: string;

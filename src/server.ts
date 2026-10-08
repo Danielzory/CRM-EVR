@@ -1,5 +1,6 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
+import { timingSafeEqual } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import bcrypt from 'bcryptjs';
@@ -385,6 +386,47 @@ export function createApp(): { app: Express } {
     } catch (error) {
       console.error('[auth/login] Erro durante o processamento do login:', error);
       return response.status(500).json({ error: 'Erro interno ao realizar login.' });
+    }
+  });
+
+  app.post('/api/auth/setup-admin', async (request: Request, response: Response) => {
+    const setupToken = process.env.ADMIN_SETUP_TOKEN;
+    const setupPassword = process.env.ADMIN_SETUP_PASSWORD;
+    const providedToken = request.get('x-admin-setup-token') ?? '';
+
+    if (!setupToken || !setupPassword) {
+      console.error('[auth/setup-admin] ADMIN_SETUP_TOKEN e/ou ADMIN_SETUP_PASSWORD não configurados');
+      return response.status(503).json({ error: 'Utilitário de configuração indisponível.' });
+    }
+
+    const expectedTokenBuffer = Buffer.from(setupToken);
+    const providedTokenBuffer = Buffer.from(providedToken);
+    const validSetupToken = expectedTokenBuffer.length === providedTokenBuffer.length
+      && timingSafeEqual(expectedTokenBuffer, providedTokenBuffer);
+
+    if (!validSetupToken) {
+      console.warn('[auth/setup-admin] Tentativa não autorizada de redefinição do Admin');
+      return response.status(401).json({ error: 'Não autorizado.' });
+    }
+
+    try {
+      const passwordHash = await bcrypt.hash(setupPassword, 10);
+      console.log('[auth/setup-admin] Hash bcrypt gerado para redefinição do Admin');
+      const [result] = await pool.execute<ResultSetHeader>(
+        'UPDATE users SET password_hash = ? WHERE email = ?',
+        [passwordHash, 'admin@evr.com.br'],
+      );
+
+      if (result.affectedRows === 0) {
+        console.warn('[auth/setup-admin] Usuário admin@evr.com.br não encontrado');
+        return response.status(404).json({ error: 'Usuário Admin não encontrado.' });
+      }
+
+      console.log('[auth/setup-admin] Senha do Admin redefinida com sucesso');
+      return response.json({ success: true, message: 'Senha do Admin redefinida com sucesso!' });
+    } catch (error) {
+      console.error('[auth/setup-admin] Falha ao redefinir senha do Admin:', error);
+      return response.status(500).json({ error: 'Erro interno ao redefinir senha do Admin.' });
     }
   });
 
